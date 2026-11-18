@@ -1,0 +1,5 @@
+rodada,amostra,cenario,beta_agregado_verdadeiro,n_efetivo_trimestres,part_E1_%,agregado_signif_DK_%,agregado_signif_boot_%,sinais_opostos_%,igualdade_rejeitada_normal_%,igualdade_rejeitada_boot_%,perde_signif_sem_E1_|signif_%,sinais_opostos_|signif_%,igualdade_rejeitada_boot_|signif_%,n_replicacoes_signif
+monte_carlo_reproduzido,DGP_repositorio_T54,Nulo (beta = 0),0.0,13.3976,36.1054,13.4,14.05,49.45,34.05,17.0,58.9552,20.8955,16.4179,268
+monte_carlo_reproduzido,DGP_repositorio_T54,"Estável (beta = 0,05)",0.05,13.5732,36.4558,93.45,94.15,11.2,33.35,16.8,9.8983,8.2932,16.3724,1869
+monte_carlo_reproduzido,DGP_repositorio_T54,Saldo de episódios,0.0368,13.5745,36.2416,26.5,33.3,98.3,99.1,92.7,86.9811,94.3396,89.0566,530
+monte_carlo_reproduzido,DGP_repositorio_T54,Um único episódio,0.0471,13.4176,36.778,38.1,57.8,48.95,91.95,75.55,85.5643,27.9528,70.3412,762

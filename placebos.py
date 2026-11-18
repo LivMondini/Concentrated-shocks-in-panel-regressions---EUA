@@ -1,6 +1,6 @@
 """
 placebos.py -- testes placebo/robustez SEM alterar projecoes_locais.py
-
+ 
 Como funciona: le o texto de projecoes_locais.py, executa tudo ATE o loop final
 (que roda lp() em todas as amostras) e reaproveita p, serie_y, monta_specs, etc.
 Uso (na pasta do projeto):
@@ -10,11 +10,11 @@ Saidas: placebo_<teste>.csv
 """
 import contextlib, io, math, os, sys, time, warnings
 from pathlib import Path
-
+ 
 import numpy as np
 import pandas as pd
 from linearmodels.panel import PanelOLS
-
+ 
 # ---------------- CONFIG ----------------
 HS = (3, 5, 7)          # horizontes testados
 N_PERM = 1000           # reps da permutacao aleatoria do choque
@@ -27,14 +27,14 @@ ESPERADO = {("Restrita", 3): 0.04761, ("Restrita", 5): 0.05488, ("Restrita", 7):
             ("Total", 3): 0.04302, ("Total", 5): 0.04044, ("Total", 7): 0.03226}
 TOL = 5e-4
 # ----------------------------------------
-
+ 
 os.chdir(Path(__file__).resolve().parent)
 SRC = Path("projecoes_locais.py").read_text(encoding="utf-8")
 i0 = SRC.find("def lp(")
 i1 = SRC.find("\ntodos = []", i0)
 if i0 < 0 or i1 < 0:
     sys.exit("Nao achei 'def lp(' / 'todos = []' em projecoes_locais.py")
-
+ 
 ns = {"__name__": "pl_import", "__file__": str(Path("projecoes_locais.py").resolve())}
 buf, t0 = io.StringIO(), time.time()
 try:
@@ -44,32 +44,32 @@ except Exception:
     print(buf.getvalue()[-3000:])
     raise
 print(f"[ok] projecoes_locais.py carregado sem rodar o loop final ({time.time() - t0:.0f}s)")
-
+ 
 p = ns["p"]
 serie_y, monta_specs, dados_da_amostra = ns["serie_y"], ns["monta_specs"], ns["dados_da_amostra"]
 AMOSTRAS, cov_kwargs, winsor, ano_de_t = ns["AMOSTRAS"], ns["cov_kwargs"], ns["winsor"], ns["ano_de_t"]
 MIN_OBS = ns["MIN_OBS"]
-
+ 
 ZMAP = {"Ch_Caixa": "Cash_Ratio_z", "Ch_Alav": "Alavancagem_L1_z", "Ch_Tam": "Tamanho_z",
         "Ch_FCO": "Fluxo_Caixa_Op_Ativo_L1_z", "Ch_Q": "Tobin_Q_L1_z"}
-
+ 
 G = np.arange(p["t"].min(), p["t"].max() + 1)       # grade trimestral continua
 G0 = G[0]
 S0 = p.groupby("t")["Shock"].first().reindex(G).to_numpy(float)
-
-
+ 
+ 
 def lag(a):
     return np.r_[np.nan, a[:-1]]
-
-
+ 
+ 
 SL10 = lag(S0)
 V = np.where(np.isfinite(S0))[0]                    # posicoes com choque valido
 rot = lambda o: str(pd.Period(ordinal=int(o), freq="Q"))
-
-
+ 
+ 
 # ---------------- construcao da amostra de um (amostra, h) ----------------
 def build(amostra, h, S=None, SL1=None, excl_years=(), excl_q=(), S2=None):
-    """Replica o passo-a-passo de lp(): merge de y, dropna, filtros, winsor de y."""
+    """Retorna (d, x) para amostra/h, com d["Shock"] = S[t-G0], d["Shock_L1"] = SL1[t-G0]."""
     S = S0 if S is None else S
     SL1 = SL10 if SL1 is None else SL1
     x = monta_specs(AMOSTRAS[amostra]["com_q"])["ctrl_int"]["x"]
@@ -96,8 +96,8 @@ def build(amostra, h, S=None, SL1=None, excl_years=(), excl_q=(), S2=None):
     if S2 is not None:
         d["Ch_Caixa_ld"] = d["Shock_ld"] * d["Cash_Ratio_z"]
     return d, x
-
-
+ 
+ 
 def fit_full(d, x, h, extra=()):
     """PanelOLS com efeito fixo de firma e Driscoll-Kraay (mesmo cov_kwargs do original)."""
     dd = d.set_index(["CNPJ_CIA", "t"])
@@ -105,11 +105,11 @@ def fit_full(d, x, h, extra=()):
         warnings.simplefilter("ignore")
         return PanelOLS(dd["y"], dd[list(x) + list(extra)], entity_effects=True).fit(
             **cov_kwargs(h, d["t"].nunique()))
-
-
+ 
+ 
 class Fast:
     """Estimador within (so coeficientes) para muitas repeticoes."""
-
+ 
     def __init__(self, d, x):
         self.x = x
         self.ti = d["t"].to_numpy() - G0
@@ -117,10 +117,10 @@ class Fast:
         self.cnt = np.bincount(self.codes)
         self.z = {c: d[c].to_numpy(float) for c in d.columns if c.endswith("_z")}
         self.y = self.dm(d["y"].to_numpy(float))
-
+ 
     def dm(self, a):
         return a - (np.bincount(self.codes, weights=a) / self.cnt)[self.codes]
-
+ 
     def coefs(self, S, SL1, override=None):
         ov = override or {}
         s, sl = S[self.ti], SL1[self.ti]
@@ -137,15 +137,15 @@ class Fast:
             cols.append(self.dm(c))
         b = np.linalg.lstsq(np.column_stack(cols), self.y, rcond=None)[0]
         return dict(zip(self.x, b))
-
-
+ 
+ 
 def resumo_null(obs, null):
     null = np.asarray(null)
     return dict(obs=obs, null_media=null.mean(), null_dp=null.std(),
                 q025=np.quantile(null, .025), q975=np.quantile(null, .975),
                 p_perm=(1 + np.sum(np.abs(null) >= abs(obs))) / (1 + len(null)))
-
-
+ 
+ 
 # ---------------- 0. checagem de reproducao ----------------
 def checar_baseline():
     ok = True
@@ -160,8 +160,8 @@ def checar_baseline():
               f"{'OK' if flag else '<<< NAO REPRODUZ'}")
     if not ok:
         sys.exit("Baseline nao reproduz: nao confie nos placebos ate entender a diferenca.")
-
-
+ 
+ 
 # ---------------- 1. permutacao do choque ----------------
 def teste_perm():
     rng, vals, rows = np.random.default_rng(SEED), S0[V], []
@@ -179,8 +179,8 @@ def teste_perm():
                     rows.append(dict(amostra=am, h=h, esquema=esq, alvo=a,
                                      **resumo_null(obs[a], [n[a] for n in null])))
     return pd.DataFrame(rows)
-
-
+ 
+ 
 # ---------------- 2. leave-one-year-out ----------------
 def teste_loyo():
     anos = sorted({int(ano_de_t(G[i])) for i in V})
@@ -197,8 +197,8 @@ def teste_loyo():
                     rows.append(dict(amostra=am, h=h, excluidos="nenhum" if not ex else "+".join(map(str, ex)),
                                      alvo=a, coef=r.params[a], se=r.std_errors[a], p=r.pvalues[a], n=int(r.nobs)))
     return pd.DataFrame(rows)
-
-
+ 
+ 
 # ---------------- 3. leave-one-quarter-out ----------------
 def teste_loqo():
     rows = []
@@ -225,8 +225,8 @@ def teste_loqo():
                            inverte_sinal=int((np.sign(g["coef"]) != np.sign(g["coef_cheia"])).sum())))
     df.to_csv("placebo_loqo_detalhe.csv", index=False)
     return pd.DataFrame(resumo)
-
-
+ 
+ 
 # ---------------- 4. choque adiantado (Shock_{t+k}) ----------------
 def teste_lead():
     rows = []
@@ -240,8 +240,8 @@ def teste_lead():
                                  ch_caixa_lead=r.params["Ch_Caixa_ld"], p_lead=r.pvalues["Ch_Caixa_ld"],
                                  shock_lead=r.params["Shock_ld"], p_shock_lead=r.pvalues["Shock_ld"], n=int(r.nobs)))
     return pd.DataFrame(rows)
-
-
+ 
+ 
 # ---------------- 5. dummy de periodo (teste formal da diferenca) ----------------
 def teste_pand():
     Q = lambda ys: {int(g) for g in G if int(ano_de_t(g)) in ys}
@@ -254,7 +254,7 @@ def teste_pand():
                 d, x = build(am, h)
                 d["Pand"] = d["t"].isin(qs).astype(float)
                 d["Shock_P"] = d["Shock"] * d["Pand"]
-                # com 1 único trimestre, Shock_P = constante * Pand (colinear): fica só Pand
+                # com 1 unico trimestre, Shock_P = constante * Pand (colinear): fica so Pand
                 extra = ["Pand"] + ([] if len(qs) == 1 else ["Shock_P"])
                 for v in x:
                     if v in ZMAP:
@@ -269,8 +269,8 @@ def teste_pand():
                                  diferenca=r.params[b], p_dif=r.pvalues[b], beta_no_regime=soma,
                                  p_regime=math.erfc(abs(z) / math.sqrt(2)), n_obs_regime=int(d["Pand"].sum())))
     return pd.DataFrame(rows)
-
-
+ 
+ 
 # ---------------- 6. permutacao cross-section do caixa (dentro de setor x trimestre) ----------------
 def teste_cash():
     rng, rows = np.random.default_rng(SEED + 1), []
@@ -288,11 +288,11 @@ def teste_cash():
                 null.append(fz.coefs(S0, SL10, override={"Cash_Ratio_z": new})["Ch_Caixa"])
             rows.append(dict(amostra=am, h=h, alvo="Ch_Caixa", **resumo_null(obs, null)))
     return pd.DataFrame(rows)
-
-
+ 
+ 
 TESTES = {"perm": teste_perm, "loyo": teste_loyo, "loqo": teste_loqo,
           "lead": teste_lead, "pand": teste_pand, "cash": teste_cash}
-
+ 
 if __name__ == "__main__":
     escolhidos = sys.argv[1:] or list(TESTES)
     checar_baseline()
@@ -303,3 +303,4 @@ if __name__ == "__main__":
         df.to_csv(f"placebo_{nome}.csv", index=False)
         print(df.to_string(index=False, float_format=lambda v: f"{v:.5f}"))
         print(f"[{nome}] {time.time() - t1:.0f}s -> placebo_{nome}.csv")
+ 
