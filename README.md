@@ -1,29 +1,24 @@
-# Concentrated shocks in panel regressions — Brazil
+# Concentrated shocks in panel regressions — United States
 
-Replication code for the Brazilian results of the paper *Concentrated shocks in panel regressions* (listed Brazilian firms, 2011Q2–2024Q3; local projections of the aggregate monetary shock × cash interaction).
+Replication code for the US results of the paper *Concentrated shocks in panel regressions*: SEC EDGAR (XBRL) quarterly firm data, the Bauer–Swanson monetary-policy shock (`MPS_ORTH`, summed by quarter, 1988Q1–2023Q4), and local projections of the shock × cash interaction.
 
-The United States results are in the companion repository: <https://github.com/LivMondini/Concentrated-shocks-in-panel-regressions---EUA>.
-
-Each table and figure of the paper and of the online appendix is mapped to a script and an output file in [section 5](#5-map-of-tables-and-figures).
+The Brazilian results are in the companion repository: <https://github.com/LivMondini/Concentrated-shocks-in-panel-regressions---EUA>.
 
 
 ## 1. Repository layout
 
 ```
-main.py                     builds the firm-quarter panel (pipeline, step 1)
-script_painel.py, calcular_q.py, ortogonalizacao.py, capex_bp.py, projecoes_locais.py
-placebos.py, ipo.py, eventos.py, ciclos.py,
-fechamento_b1.py, fechamento_letter.py, permutacao_lp.py,
-monte_carlo_lp.py, monte_carlo_perm.py      helper modules used by the analysis
-revisao/                    scripts that produce the paper's tables and figures
-revisao/saidas/             small output tables (CSV) used in the paper
+extrair_sec.py, tratar_choque.py, tratar_epu.py   raw data -> tidy series
+painel_eua.py, filtrar_amostra.py                 builds the regression panels
+projecoes_locais.py, bloco_checklist.py           local projections, episodes, block bootstrap
+monte_carlo_checklist.py                          Monte Carlo of the episode-equality test
+revisao_eua.py                                    audit tables and Monte Carlo (Tables A26, A27)
+saidas_revisao/                                   small output tables (CSV) used in the paper
 ```
 
 All paths are relative to the repository root; run every command from that folder.
 
 ## 2. Environment
-
-Python 3.13. Install the pinned dependencies:
 
 ```bash
 python -m venv .venv
@@ -31,93 +26,64 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-Main packages: numpy 2.5.4, pandas 3.0.6, statsmodels 0.15.0, linearmodels 7.0, matplotlib 3.11.2, requests 2.34.2, scipy, joblib. Random seeds are fixed (section 6); with the same package versions the results are reproducible.
+Main packages: numpy 2.5.4, pandas, statsmodels 0.15.0, linearmodels, matplotlib 3.11.2, scipy, openpyxl. Random seeds are fixed (section 5).
+
+<!-- TODO (author): pin the exact Python / pandas / linearmodels versions used for the paper (local .venv had Python 3.15.0, pandas 3.1.0, linearmodels 7.1) -->
 
 ## 3. Data (not included)
 
-Raw data are **not redistributed**. Download them from the original sources and respect their terms of use.
+Raw data are **not redistributed**. Download them and respect their terms of use.
 
 | Input | Source | Location |
 |---|---|---|
-| Financial statements (DFP/ITR) and company registry | CVM open data, <https://dados.cvm.gov.br/> | `dados_cvm/` |
-| Share prices | B3 historical quotations (COTAHIST), <https://www.b3.com.br>; built with `precos_b3.py`, `tickers.py` | `precos_trimestrais.csv`, `tickers.csv` |
-| Macro series (selic, fiscal risk, EMBI+, VIX) | Banco Central do Brasil (SGS API), Ipeadata, Yahoo Finance | `vix_trimestral.csv`, `risco_fiscal_trimestral.csv`, `epu_brasil.csv` |
-| COPOM meeting dates; DI-swap 360d | BCB / B3 | `datas_copom.csv`, `swap_di_pre_360_diario.csv` |
-| Focus expectations | BCB Focus | `revisao/saidas/13_focus_reunioes.csv` |
+| Financial Statement Data Sets (quarterly ZIPs containing `sub.txt` and `num.txt`) | U.S. SEC, <https://www.sec.gov/data-research/sec-markets-data/financial-statement-data-sets> | `dados_brutos/sec/` (e.g. `2023q4.zip`) |
+| Monetary policy surprises, file `monetary-policy-surprises-data.xlsx` (columns `Date`, `MPS`, `MPS_ORTH`) | Bauer and Swanson (2023), authors' data page | `dados_brutos/fomc/` |
+| Economic Policy Uncertainty, file `US_Policy_Uncertainty_Data.csv` | <https://www.policyuncertainty.com/us_monthly.html> | `dados_brutos/epu/` |
 
-<!-- TODO (author): exact file names/URLs for COPOM dates, swap, VIX and fiscal-risk series, and for the Focus file -->
+<!-- TODO (author): range of SEC quarters needed; exact URL of the Bauer–Swanson file -->
 
 ## 4. How to run
 
-### Step 1 — build the panel
-
 ```bash
-python main.py
+python extrair_sec.py        # SEC ZIPs        -> dados_tratados/sec_longo.csv
+python tratar_choque.py      # FOMC spreadsheet -> dados_tratados/choque_fomc_trimestral.csv
+python tratar_epu.py         # EPU             -> dados_tratados/epu_eua_trimestral.csv
+python painel_eua.py         # -> dados_tratados/painel_regressao_eua*.csv (main, no median, robust)
+python filtrar_amostra.py    # -> dados_tratados/painel_regressao_eua_amostra*.csv
+python projecoes_locais.py   # local projections; also runs bloco_checklist.py
+python revisao_eua.py        # audit tables -> saidas_revisao/
 ```
 
-Runs, in order: `script_painel.py` → `calcular_q.py` → `script_painel.py` → `calcular_q.py` → `ortogonalizacao.py` → `capex_bp.py` → `projecoes_locais.py`. Main output: `painel_regressao_q_bp.csv`. A log is written to `pipeline_execution.log`.
+`dados_tratados/` is created by these scripts and is not part of the repository (the SEC extract alone is about 460 MB).
 
-### Step 2 — tables and figures
+### Treatment of missing debt in the panels
 
-```bash
-python revisao/31_numeros_choque.py       # concentration of the shock
-python revisao/01_pesos_fwl.py            # FWL weights of 2021
-python revisao/06_blocos4.py              # four-quarter block exclusions
-python revisao/06f_q4_vs_resto.py
-python revisao/07_tabela1_stud.py         # pooled and episode coefficients, studentized permutation
-python revisao/04_perm_stud.py
-python revisao/07b_tabela1_fl_wcb.py      # alternative p-values
-python revisao/07c_tabela1_esquemas.py
-python revisao/36_fe_tempo.py             # time fixed effects
-python revisao/09i_grade_concentracao.py  # size by concentration (T = 54, 108)
-python revisao/10_diag_tamanho.py         # size diagnostics
-python revisao/11_causa_distorcao.py
-python revisao/12_poder.py                # power and minimum detectable effect
-python revisao/05_tabelas_artigo.py       # formats Table 1
-```
-
-Monte Carlo scripts (`09b`, `09d`, `09e`, `09f`, `09g`) take the number of replications and the scenario as arguments; the exact command used for each run is recorded in `revisao/logs/`. Runs with 10,000 replications take a long time.
-
-## 5. Map of tables and figures
-
-| Paper item | Script | Output (`revisao/saidas/`) |
-|---|---|---|
-| Table 1 | `01_pesos_fwl.py`, `05_tabelas_artigo.py` | `01_pesos_resumo.csv`, `05_tabelas_artigo.md` |
-| Table 2, A1 | `07_tabela1_stud.py` | `07_tabela1_stud.csv` |
-| Figure 1 (data) | `31_numeros_choque.py`, `06_blocos4.py` | `31_numeros_choque.csv`, `06_blocos4.csv` |
-| Figure 2 (data) | `09f_consolida_mc.py` | `09f_mc_consolidado.csv` |
-| A2, A3, A26 (Brazil) | `31_numeros_choque.py` | `31_numeros_choque.csv` |
-| A4 | `01_pesos_fwl.py` | `01_pesos_*.csv` |
-| A5 | `06_blocos4.py` | `06_blocos4.csv` |
-| A6 | `06f_q4_vs_resto.py` | `06f_q4_vs_resto.csv` |
-| A7, A8 | `36_fe_tempo.py` | `36_fe_tempo.csv`, `36_pesos_fe*.csv` |
-| A9, A10, A14–A17 | `09d_mc_ext.py`, `09e_fixedb_corrigido.py`, `09f_consolida_mc.py` | `09f_mc_consolidado.csv` |
-| A11, A12 | `09i_grade_concentracao.py` | `09i_grade_T54_*.csv`, `09i_grade_T108_*.csv` |
-| A18 | `07b_tabela1_fl_wcb.py` | `07b_tabela1_fl_wcb.csv` |
-| A19 | `07c_tabela1_esquemas.py` | `07c_tabela1_esquemas.csv` |
-| A20, A22 | `10_diag_tamanho.py` | `10_diag_h_*.csv`, `10_diag_rho_*.csv`, `10_diag_bloco_*.csv` |
-| A23 | `11_causa_distorcao.py` | `11_interv_reps10000.csv` |
-| A25 | `12_poder.py` | `12_poder_reps5000.csv` |
-| A27 (United States) | see the US repository | — |
-
-<!-- TODO (author): A21 and A24 scripts; whether 09g_mc_int.py feeds any table; scripts for Figures 1 and 2 -->
-
-## 6. Seeds
-
-| Seed | Used in |
+| Version | Definition |
 |---|---|
-| 12345 | permutation tests (`placebos.py`, `permutacao_lp.py`, `04_perm_stud.py`, `07*_tabela1*.py`, `36_fe_tempo.py`) |
-| 2026 | Monte Carlo simulations (`monte_carlo_lp.py`, `09*`, `10`, `11`, `12`) |
+| main (median) | observed debt → firm's own fill → zero if the firm never reports short- or long-term debt → median by quarter, SIC2 and quartile |
+| `sem_med` (no median) | removes only the median-filled rows |
+| `robust` | observed debt only |
+| `_adj` | winsorization / z-score adjustment conditional on a valid lagged leverage (`projecoes_locais.py`) |
 
-## 7. Check your run
+## 5. Outputs used in the paper
+
+| Paper item | Script | Output |
+|---|---|---|
+| Table A26 (United States): shock concentration, 45 quarters, effective number 17.8, episodes A and B | `revisao_eua.py` | `saidas_revisao/u3_concentracao_trimestre.csv` |
+| Table A27: Monte Carlo of the episode-equality test | `revisao_eua.py` (loads `monte_carlo_checklist.py`) | `saidas_revisao/u9_monte_carlo_t54.csv` |
+
+<!-- TODO (author): confirm u3 has 45 rows (window of Table A26); list any other US results shown in the manuscript (checklist_*.csv) -->
+
+Seeds: `20261024` in `bloco_checklist.py` (bootstrap), `monte_carlo_checklist.py` and `revisao_eua.py` (Monte Carlo with R = 2,000 replications and B = 300 permutations).
+
+## 6. Check your run
 
 | Quantity | Expected | File |
 |---|---|---|
-| Effective number of quarters (inverse Herfindahl of squared deviations) | 9.8 of 54 | `31_numeros_choque.csv`, `n_ef_hhi` = 9.797 |
-| Share of 2021 in squared deviations | 34.5% | `31_numeros_choque.csv`, `share_2021` = 0.3446 |
-| FWL weight of 2021Q1–Q4 | 0.38–0.40 | `01_pesos_resumo.csv`, `omega_2021` |
-| Size at N_eff = 9.8, h = 3 (DK / DK 2h+2 / cluster / permutation) | 13.6 / 16.0 / 8.6 / 5.7 | `09i_grade_T54_*.csv` (Table A11) |
+| Quarters in the concentration table | 45 | `u3_concentracao_trimestre.csv` |
+| Effective number of quarters | 17.8 | `u3_concentracao_trimestre.csv` |
+| Share of each episode (A: 2015Q4–2018Q4, B: 2022Q1–2023Q3) | 33.7% | `u3_concentracao_trimestre.csv` |
 
-## 8. License
+## 7. License
 
 Code: MIT (see `LICENSE`). The data belong to their original providers; see their terms of use.
