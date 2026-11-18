@@ -1,127 +1,123 @@
-# Replication code: pooled cash gradients, monetary shocks and fixed-asset outcomes in Brazil
+# Concentrated shocks in panel regressions — Brazil
 
-This repository contains the code and the constructed estimation panel used in the letter *"Is the liquidity shield a stable channel? Episode dependence in panel local projections with aggregate monetary shocks"*.
+Replication code for the Brazilian results of the paper *Concentrated shocks in panel regressions* (listed Brazilian firms, 2011Q2–2024Q3; local projections of the aggregate monetary shock × cash interaction).
 
-The study estimates panel local projections (LPs) in which an aggregate monetary shock, built from the 360-day DI-Pré swap around COPOM meetings, is interacted with the lagged cash ratio of listed non-financial Brazilian firms (2011Q1-2024Q3). The outcome is the change in log fixed assets. The results are conditional panel regressions and carry no causal interpretation.
+The United States results are in the companion repository: <https://github.com/LivMondini/Concentrated-shocks-in-panel-regressions---EUA>.
 
-## 1. What is (and is not) in this repository
+Each table and figure of the paper and of the online appendix is mapped to a script and an output file in [section 5](#5-map-of-tables-and-figures).
 
-**Included**
 
-- The Python scripts that build the panel, construct the shock and run every analysis reported in the paper.
-- Small input files: COPOM dates, the daily 360-day DI-Pré series and the monthly EPU series.
-- The constructed regression panel (`painel_regressao_q_bp.csv`, about 10 MB) and the saved result files that feed the tables.
-- The execution log of the main pipeline.
-
-**Not included**
-
-- The raw CVM files (about 14.6 GB). They are public and must be downloaded from the source (Section 3).
-- The raw B3 price archives (`dados_b3/COTAHIST_A*.ZIP`). They are public and must be downloaded from the source.
-
-## 2. Repository structure
+## 1. Repository layout
 
 ```
-.
-├── main.py                      # runs the main pipeline in order
-├── script_painel.py             # builds the accounting panel from CVM files
-├── calcular_q.py                # approximate Tobin's Q (CVM equity data + B3 prices)
-├── ortogonalizacao.py           # orthogonalises the quarterly shock (VIX, EMBI+)
-├── capex_bp.py                  # cash-flow-statement capex (DFC) and balance-sheet variables
-├── projecoes_locais.py          # panel LPs: pooled estimates, horizons, IRFs
-├── eventos.py                   # event-quarter labels (episodes)
-├── ciclos.py                    # episode LPs (2013Q2-2015Q2, 2021, calm quarters)
-├── bootstrap_blocos.py          # block bootstrap over quarters
-├── placebos.py                  # shock and cash permutation placebos
-├── ipo2.py                      # entrant analyses and random sector-matched exclusions
-├── fechamento_b1.py             # episode exclusions: baseline vs strict
-├── gerar_tabela1.py             # alternative generator of the episode table
-├── f_classifica_reunioes.py     # classifies meetings by market reaction (not used in the primary shock)
-├── (other analysis scripts)     # [list here any remaining .py files used for the appendix]
-├── datas_copom.csv              # COPOM meeting dates
-├── swap_di_pre_360_diario.csv   # daily 360-day DI-Pré swap, annual percent
-├── epu_brasil.csv               # monthly Brazilian EPU index
-├── painel_regressao_q_bp.csv    # constructed regression panel
-├── (result files: *.csv, *.md)  # saved outputs used in the tables
-└── pipeline_execution.log       # log of the main pipeline run
+main.py                     builds the firm-quarter panel (pipeline, step 1)
+script_painel.py, calcular_q.py, ortogonalizacao.py, capex_bp.py, projecoes_locais.py
+placebos.py, ipo.py, eventos.py, ciclos.py,
+fechamento_b1.py, fechamento_letter.py, permutacao_lp.py,
+monte_carlo_lp.py, monte_carlo_perm.py      helper modules used by the analysis
+revisao/                    scripts that produce the paper's tables and figures
+revisao/saidas/             small output tables (CSV) used in the paper
 ```
 
-Adjust this tree to the exact file names in the repository.
+All paths are relative to the repository root; run every command from that folder.
 
-## 3. Data sources
+## 2. Environment
 
-All data are public. The raw files are not redistributed here.
+Python 3.13. Install the pinned dependencies:
 
-| Component | Source | Where to put it / notes |
+```bash
+python -m venv .venv
+# Windows: .venv\Scripts\activate        Linux/macOS: source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+Main packages: numpy 2.5.4, pandas 3.0.6, statsmodels 0.15.0, linearmodels 7.0, matplotlib 3.11.2, requests 2.34.2, scipy, joblib. Random seeds are fixed (section 6); with the same package versions the results are reproducible.
+
+## 3. Data (not included)
+
+Raw data are **not redistributed**. Download them from the original sources and respect their terms of use.
+
+| Input | Source | Location |
 |---|---|---|
-| Quarterly financial statements (BPA, BPP, DRE, DFC; DFP/ITR) and equity data of listed firms | CVM, open-data portal [portal address] | [folder name used by the scripts]. Downloaded in [month/year]. |
-| Share prices | B3, `COTAHIST_A*.ZIP` | `dados_b3/`. Downloaded in [month/year]. |
-| 360-day DI-Pré swap, COPOM dates | B3 and Central Bank of Brazil [confirm] | `swap_di_pre_360_diario.csv`, `datas_copom.csv` (included). |
-| Selic target (SGS 432) and monthly IPCA (SGS 433) | Central Bank of Brazil | Used only for the real-rate construction. |
-| EMBI+ Brazil (`JPM366_EMBI366`, called `Risco_Fiscal` in the code) | Ipeadata | Quarterly aggregation. |
-| VIX (`^VIX`) | Yahoo Finance via `yfinance` | Daily closes averaged within the quarter. |
-| Brazilian economic policy uncertainty index | Global Economic Policy Uncertainty Index | `epu_brasil.csv` (included); used only in exploratory tests. |
-| Exchange rate and IBC-Br activity index | Central Bank of Brazil [confirm] | Used only in the appendix tests. |
+| Financial statements (DFP/ITR) and company registry | CVM open data, <https://dados.cvm.gov.br/> | `dados_cvm/` |
+| Share prices | B3 historical quotations (COTAHIST), <https://www.b3.com.br>; built with `precos_b3.py`, `tickers.py` | `precos_trimestrais.csv`, `tickers.csv` |
+| Macro series (selic, fiscal risk, EMBI+, VIX) | Banco Central do Brasil (SGS API), Ipeadata, Yahoo Finance | `vix_trimestral.csv`, `risco_fiscal_trimestral.csv`, `epu_brasil.csv` |
+| COPOM meeting dates; DI-swap 360d | BCB / B3 | `datas_copom.csv`, `swap_di_pre_360_diario.csv` |
+| Focus expectations | BCB Focus | `revisao/saidas/13_focus_reunioes.csv` |
 
-## 4. Environment
+<!-- TODO (author): exact file names/URLs for COPOM dates, swap, VIX and fiscal-risk series, and for the Focus file -->
 
-The main pipeline was run with the following versions (taken from `pipeline_execution.log`):
+## 4. How to run
 
-- Python 3.13.16
-- NumPy 2.5.4
-- pandas 3.0.6
-- requests 2.34.2
-- statsmodels 0.15.0
-- linearmodels 7.0
-- matplotlib 3.11.2
-- yfinance (version not recorded)
+### Step 1 — build the panel
 
-```
-pip install numpy==2.5.4 pandas==3.0.6 requests==2.34.2 statsmodels==0.15.0 linearmodels==7.0 matplotlib==3.11.2 yfinance
+```bash
+python main.py
 ```
 
-## 5. How to reproduce
+Runs, in order: `script_painel.py` → `calcular_q.py` → `script_painel.py` → `calcular_q.py` → `ortogonalizacao.py` → `capex_bp.py` → `projecoes_locais.py`. Main output: `painel_regressao_q_bp.csv`. A log is written to `pipeline_execution.log`.
 
-1. Download the raw CVM and B3 files (Section 3) and place them where the scripts expect them. [Describe the folder layout here.]
-2. Install the dependencies (Section 4).
-3. Run the main pipeline:
+### Step 2 — tables and figures
 
-   ```
-   python main.py
-   ```
+```bash
+python revisao/31_numeros_choque.py       # concentration of the shock
+python revisao/01_pesos_fwl.py            # FWL weights of 2021
+python revisao/06_blocos4.py              # four-quarter block exclusions
+python revisao/06f_q4_vs_resto.py
+python revisao/07_tabela1_stud.py         # pooled and episode coefficients, studentized permutation
+python revisao/04_perm_stud.py
+python revisao/07b_tabela1_fl_wcb.py      # alternative p-values
+python revisao/07c_tabela1_esquemas.py
+python revisao/36_fe_tempo.py             # time fixed effects
+python revisao/09i_grade_concentracao.py  # size by concentration (T = 54, 108)
+python revisao/10_diag_tamanho.py         # size diagnostics
+python revisao/11_causa_distorcao.py
+python revisao/12_poder.py                # power and minimum detectable effect
+python revisao/05_tabelas_artigo.py       # formats Table 1
+```
 
-   `main.py` runs, in this order: `script_painel.py` -> `calcular_q.py` -> `script_painel.py` (second pass) -> `calcular_q.py` (second pass) -> `ortogonalizacao.py` -> `capex_bp.py` -> `projecoes_locais.py`.
+Monte Carlo scripts (`09b`, `09d`, `09e`, `09f`, `09g`) take the number of replications and the scenario as arguments; the exact command used for each run is recorded in `revisao/logs/`. Runs with 10,000 replications take a long time.
 
-   Principal outputs: `painel_final.csv`, `painel_final_q.csv`, `painel_regressao_q_ortog.csv`, `painel_regressao_q_bp.csv`, `irf_consolidado_Delta_log_Ativo_Fixo_ctrlL1.csv`.
-4. Run the analysis scripts for the episode, bootstrap, placebo, entrant and capex results (`ciclos.py`, `bootstrap_blocos.py`, `placebos.py`, `ipo2.py`, `fechamento_b1.py` and the others listed above).
+## 5. Map of tables and figures
 
-The panel `painel_regressao_q_bp.csv` is provided so that the regressions can be re-run without downloading the raw files.
+| Paper item | Script | Output (`revisao/saidas/`) |
+|---|---|---|
+| Table 1 | `01_pesos_fwl.py`, `05_tabelas_artigo.py` | `01_pesos_resumo.csv`, `05_tabelas_artigo.md` |
+| Table 2, A1 | `07_tabela1_stud.py` | `07_tabela1_stud.csv` |
+| Figure 1 (data) | `31_numeros_choque.py`, `06_blocos4.py` | `31_numeros_choque.csv`, `06_blocos4.csv` |
+| Figure 2 (data) | `09f_consolida_mc.py` | `09f_mc_consolidado.csv` |
+| A2, A3, A26 (Brazil) | `31_numeros_choque.py` | `31_numeros_choque.csv` |
+| A4 | `01_pesos_fwl.py` | `01_pesos_*.csv` |
+| A5 | `06_blocos4.py` | `06_blocos4.csv` |
+| A6 | `06f_q4_vs_resto.py` | `06f_q4_vs_resto.csv` |
+| A7, A8 | `36_fe_tempo.py` | `36_fe_tempo.csv`, `36_pesos_fe*.csv` |
+| A9, A10, A14–A17 | `09d_mc_ext.py`, `09e_fixedb_corrigido.py`, `09f_consolida_mc.py` | `09f_mc_consolidado.csv` |
+| A11, A12 | `09i_grade_concentracao.py` | `09i_grade_T54_*.csv`, `09i_grade_T108_*.csv` |
+| A18 | `07b_tabela1_fl_wcb.py` | `07b_tabela1_fl_wcb.csv` |
+| A19 | `07c_tabela1_esquemas.py` | `07c_tabela1_esquemas.csv` |
+| A20, A22 | `10_diag_tamanho.py` | `10_diag_h_*.csv`, `10_diag_rho_*.csv`, `10_diag_bloco_*.csv` |
+| A23 | `11_causa_distorcao.py` | `11_interv_reps10000.csv` |
+| A25 | `12_poder.py` | `12_poder_reps5000.csv` |
+| A27 (United States) | see the US repository | — |
 
-## 6. Where the paper's tables come from
+<!-- TODO (author): A21 and A24 scripts; whether 09g_mc_int.py feeds any table; scripts for Figures 1 and 2 -->
 
-| Paper element | Saved files |
+## 6. Seeds
+
+| Seed | Used in |
 |---|---|
-| Pooled gradient (Table 1, first row of each panel) | outputs of `projecoes_locais.py` (e.g. `irf_consolidado_Delta_log_Ativo_Fixo_ctrlL1.csv`) |
-| Table 1 (episodes, exclusions, differences) | `tabela1.csv`, `ciclos_igualdade.csv`, `fechamento_b1.md` |
-| Concentration of the shock, leave-one-out | `fechamento_letter.md`, `placebo_loqo.csv`, `placebo_loyo.csv` |
-| Block bootstrap | `bootstrap_blocos.csv`, `ipo2_boot.csv` |
-| Table 2 (capex vs. stock) | `inv1315_decomp.csv`, `inv1315_split.csv` |
-| Table A.1 and Appendix A.2 | alternative-window and leave-one-meeting files, `inv1315_loqo_janela.csv` |
-| Appendix A.3 | `carry_01_split.csv`, `carry_02_sem2021.csv`, `carry_04_setorial.csv`, `eventos_epu.csv` |
-| Placebos | `placebo_perm.csv`, `placebo_cash.csv`, `placebo_lead.csv`, `placebo_pand.csv` |
+| 12345 | permutation tests (`placebos.py`, `permutacao_lp.py`, `04_perm_stud.py`, `07*_tabela1*.py`, `36_fe_tempo.py`) |
+| 2026 | Monte Carlo simulations (`monte_carlo_lp.py`, `09*`, `10`, `11`, `12`) |
 
-## 6.1 Random seeds
+## 7. Check your run
 
-- Shock permutation (1,000 draws) and cash permutation (500 draws): seed 12345 (`placebos.py`).
-- Entrant-matched random exclusion (1,000 draws) and entrant bootstrap (1,000 draws): seed 20261 (`ipo2.py`).
-- Main regime bootstrap (1,000 draws; blocks of length h+1 and 8): seed 20260 (`bootstrap_blocos.py`).
+| Quantity | Expected | File |
+|---|---|---|
+| Effective number of quarters (inverse Herfindahl of squared deviations) | 9.8 of 54 | `31_numeros_choque.csv`, `n_ef_hhi` = 9.797 |
+| Share of 2021 in squared deviations | 34.5% | `31_numeros_choque.csv`, `share_2021` = 0.3446 |
+| FWL weight of 2021Q1–Q4 | 0.38–0.40 | `01_pesos_resumo.csv`, `omega_2021` |
+| Size at N_eff = 9.8, h = 3 (DK / DK 2h+2 / cluster / permutation) | 13.6 / 16.0 / 8.6 / 5.7 | `09i_grade_T54_*.csv` (Table A11) |
 
-## 7. Notes and known limitations
+## 8. License
 
-- Panel quarters: 2011Q1-2024Q3 (55); estimation uses 54 quarters (2011Q2-2024Q3).
-- Fiscal years that differ from the calendar year are not adjusted in the main panel.
-- Extraordinary COPOM meetings are neither flagged nor removed in the primary shock.
-- The standard deviation of the shock is printed by `projecoes_locais.py` when it runs; it is not stored in a saved output file.
-- Calm-quarter observation counts and the standard errors of the episode rows in `tabela1.csv` are derived (see the table notes in the paper).
-- No stage-by-stage sample attrition table is saved.
-- The raw CVM data may be revised by the source after download; the download date is recorded above.
-
+Code: MIT (see `LICENSE`). The data belong to their original providers; see their terms of use.
