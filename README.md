@@ -1,4 +1,4 @@
-# Concentrated shocks in panel regressions — United States
+# How many periods identify the interaction? Concentrated shocks in panel regressions — United States
 
 Replication code for the US results of the paper *Concentrated shocks in panel regressions*: SEC EDGAR (XBRL) quarterly firm data, the Bauer–Swanson monetary-policy shock (`MPS_ORTH`, summed by quarter, 1988Q1–2023Q4), and local projections of the shock × cash interaction.
 
