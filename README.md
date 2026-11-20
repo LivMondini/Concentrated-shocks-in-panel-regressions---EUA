@@ -2,8 +2,6 @@
 
 Replication code for the US results of the paper *Concentrated shocks in panel regressions*: SEC EDGAR (XBRL) quarterly firm data, the Bauer–Swanson monetary-policy shock (`MPS_ORTH`, summed by quarter, 1988Q1–2023Q4), and local projections of the shock × cash interaction.
 
-The Brazilian results are in the companion repository: <https://github.com/LivMondini/Concentrated-shocks-in-panel-regressions---EUA>.
-
 
 ## 1. Repository layout
 
